@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Upload</title>
+</head>
+<body>
+    <h1>Upload an Image</h1>
+    <form action="/upload2" method="post" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <input type="submit" value="Upload">
+    </form>
+    {% if labels %}
+        <h2>TextDetections:</h2>
+        <ul>
+            {% for label in labels %}
+                <li>{{ label.DetectedText }}: {{ label.Confidence }}%</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+</body>
+</html>
