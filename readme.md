@@ -4,6 +4,109 @@
 
 다음은 input(입력), 기능 학습 및 분류 단계를 보여주는 CNN 알고리즘 프로세스를 설명하는 자세한 다이어그램입니다. 이미지는 컨볼루셔널 신경망(Convolutional Neural Network)이 각 단계를 통해 데이터를 처리하고 분류하는 방법을 시각적으로 나타냅니다.
 
+CNN(Convolutional Neural Network, 합성곱 신경망)은 이미지 인식 및 처리에 자주 사용되는 딥러닝 알고리즘입니다. CNN은 특히 이미지의 공간적 구조를 잘 반영하는 특성 덕분에 컴퓨터 비전 작업에서 뛰어난 성능을 발휘합니다.
+
+![CNN](./images/cnn2.png)
+
+<br>
+
+## 1-1. 입력 레이어 (Input Layer)
+
+CNN은 이미지 데이터를 입력으로 받습니다. 일반적으로 이미지는 너비, 높이, 색상 채널(RGB)로 구성된 3차원 배열로 표현됩니다.
+
+![Input](./images/01_matrix_source.png)
+
+<br><br><br>
+
+## 1-2. 합성곱 레이어 (Convolutional Layer)
+
+합성곱 연산: 합성곱 레이어는 필터(또는 커널)라 불리는 작은 가중치 행렬을 사용해 입력 이미지에 적용됩니다. 이 필터는 이미지의 특정 패턴(예: 가장자리, 텍스처 등)을 추출하는 역할을 합니다.
+특징 맵 (Feature Map): 필터가 입력 데이터에 적용되어 나온 결과가 특징 맵으로, 이는 이미지 내의 특정 패턴을 강조하여 나타낸 것입니다.
+Stride와 Padding: 필터를 적용하는 간격을 stride라고 하며, 이미지 경계를 처리하기 위해 사용되는 추가 픽셀을 padding이라고 합니다. Stride와 Padding은 출력 크기에 영향을 미칩니다.
+
+![Convolution](./images/02_zero_padding.png)
+
+![Multiply](./images/cross2.jpg)
+
+![Convolution](./images/03_kernnel.png)
+
+![Equals](./images/vertical_equal2.jpg)
+
+![Convolution](./images/04_convolution.png)
+
+<br><br><br>
+
+## 1-3. 활성화 함수 (Activation Function)
+
+ReLU(Rectified Linear Unit): 비선형 활성화 함수로, 특징 맵의 음수를 모두 0으로 바꿔줍니다. 이는 네트워크에 비선형성을 추가하여 더 복잡한 패턴을 학습할 수 있게 합니다.
+
+![ReLU](./images/05_relu.png)
+
+<br><br><br>
+
+## 1-4. 풀링 레이어 (Pooling Layer)
+
+Max Pooling: 가장 많이 사용되는 풀링 방식으로, 작은 영역에서 가장 큰 값을 선택하여 데이터 크기를 줄이고 불변성을 강화합니다.
+Average Pooling: 영역 내의 평균값을 사용하는 풀링 방식으로, 특징 맵의 크기를 줄이면서 주요 정보를 유지하는 역할을 합니다.
+풀링 레이어는 특징 맵의 크기를 줄이고 계산 효율성을 높이며, 오버피팅을 방지하는 데 도움을 줍니다.
+
+![ReLU](./images/05_relu_max_before.png)
+
+![ReLU](./images/05_relu_max.png)
+
+![Pooling Layer](./images/06_max_pooling_before.png)
+
+![Pooling Layer](./images/06_max_pooling.png)
+
+<br><br><br>
+
+## 1-5. 완전 연결 레이어 (Fully Connected Layer, FC Layer)
+
+합성곱 및 풀링 레이어를 거쳐 축소된 특징 맵은 1차원 벡터로 펼쳐져(Flatten) 완전 연결 레이어로 전달됩니다.
+이 레이어에서는 모든 입력 뉴런이 다음 레이어의 모든 뉴런과 연결되며, CNN이 최종적으로 분류 작업을 수행하는 역할을 합니다.
+
+![Flatten](./images/07_flatten.png)
+
+<br><br><br>
+
+## 1-6. 출력 레이어 (Output Layer)
+
+Softmax: 다중 클래스 분류 문제에서는 Softmax 활성화 함수가 사용되며, 입력을 확률로 변환하여 가장 가능성 높은 클래스를 선택합니다.
+Sigmoid: 이진 분류에서는 Sigmoid 함수가 사용되며, 출력값을 0과 1 사이의 값으로 제한합니다.
+
+![Softmax](./images/08_softmax01.png)
+
+![Softmax](./images/08_softmax02.png)
+
+![Softmax](./images/08_softmax03.png)
+
+<br><br><br>
+
+## 1-7. 학습 과정 (Training Process)
+
+CNN은 손실 함수(예: 교차 엔트로피 손실)를 최소화하는 방향으로 가중치를 조정합니다.
+
+**역전파 (Backpropagation)**와 경사 하강법 (Gradient Descent) 알고리즘이 사용되어 
+
+네트워크의 가중치를 업데이트합니다.
+
+![학습과정](./images/feature_learning.png)
+
+<br><br><br>
+
+## 1-8. 이미지 인식 및 분류 과정(Classification)
+
+Flattening 되어 평탄화된 행렬을 ReLU, Softmax 함수를 거쳐 확률 형태로 output을 얻는 단계를 의미합니다.
+
+![이미지분류과정](./images/classification.png)
+
+<br><br><br>
+
+## 1-8. 응용 분야
+
+CNN은 이미지 분류, 객체 검출, 얼굴 인식, 자율 주행, 의료 영상 분석 등 다양한 분야에 널리 사용됩니다.
+
+
 <br><br><br><br>
 
 # 2. CNN을 활용한 손글씨 판별하기
