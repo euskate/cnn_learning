@@ -448,13 +448,826 @@ uploads : 판별할 이미지가 업로드되는 디렉토리
 
 # 3. CNN을 활용한 이미지 분류 및 정보 유추하기
 
+## 3-1. 프로젝트 파일 구조
 
+```lua
+image_classification/
+│
+├── app.py  # Flask 웹 애플리케이션의 진입점
+├── uploads/  # 사용자가 업로드한 파일을 저장하는 디렉터리
+├── templates/
+│   ├── index.html  # 메인 페이지 템플릿
+│   └── index2.html  # 결과 페이지 템플릿
+└── model.py        # CNN 모델 정의
+```
+
+<br><br><br>
+
+## 3-2. 모델 작성 및 훈련
+
+### 3-2-1. 라이브러리 설치
+
+```bash
+pip install Flask tensorflow numpy pillow
+```
+
+<br><br>
+
+### 3-2-2. model.py 작성
+
+```python
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import os
+
+# 모델 정의
+def create_cnn_model(input_shape=(224, 224, 3), num_classes=10):
+    model = Sequential()
+
+    # Convolutional Layers
+    model.add(Conv2D(32, (3, 3), activation='relu', input_shape=input_shape))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Conv2D(128, (3, 3), activation='relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    # Flatten and Dense Layers
+    model.add(Flatten())
+    model.add(Dense(128, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(num_classes, activation='softmax'))
+
+    # Compile the model
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+    return model
+
+# 모델 훈련 함수
+def train_cnn_model(train_data_dir, validation_data_dir, model_save_path, input_shape=(224, 224, 3), num_classes=10, batch_size=32, epochs=10):
+    # 데이터 전처리 및 증강
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True)
+
+    test_datagen = ImageDataGenerator(rescale=1./255)
+
+    train_generator = train_datagen.flow_from_directory(
+        train_data_dir,
+        target_size=input_shape[:2],
+        batch_size=batch_size,
+        class_mode='categorical')
+
+    validation_generator = test_datagen.flow_from_directory(
+        validation_data_dir,
+        target_size=input_shape[:2],
+        batch_size=batch_size,
+        class_mode='categorical')
+
+    # 모델 생성
+    model = create_cnn_model(input_shape=input_shape, num_classes=num_classes)
+
+    # 모델 훈련
+    model.fit(
+        train_generator,
+        steps_per_epoch=train_generator.samples // batch_size,
+        validation_data=validation_generator,
+        validation_steps=validation_generator.samples // batch_size,
+        epochs=epochs)
+
+    # 모델 저장
+    model.save(model_save_path)
+
+# 모델 로드 함수
+def load_cnn_model(model_path):
+    return tf.keras.models.load_model(model_path)
+```
+
+<br><br>
+
+### 3-2-3. 모델 훈련
+
+```bash
+python model.py
+```
+
+<br><br><br>
+
+## 3-3. 웹 애플리케이션 작성
+
+### 3-3-1. app.py
+
+```python
+from flask import Flask, request, render_template
+import boto3
+import os
+
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'uploads'
+
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
+
+rekognition = boto3.client('rekognition')
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/text')
+def index2():
+    return render_template('index2.html')
+
+@app.route('/upload', methods=['POST'])
+def upload():
+    if 'file' not in request.files:
+        return 'No file part'
+    file = request.files['file']
+    if file.filename == '':
+        return 'No selected file'
+    if file:
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+        file.save(file_path)
+
+        with open(file_path, 'rb') as image:
+            response = rekognition.detect_labels(Image={'Bytes': image.read()})
+
+        labels = response['Labels']
+        return render_template('index.html', labels=labels)
+
+@app.route('/upload2', methods=['POST'])
+def upload2():
+    if 'file' not in request.files:
+        return 'No file part'
+    file = request.files['file']
+    if file.filename == '':
+        return 'No selected file'
+    if file:
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+        file.save(file_path)
+
+        with open(file_path, 'rb') as image:
+            response = rekognition.detect_text(Image={'Bytes': image.read()})
+
+        labels = response['TextDetections']
+        return render_template('index2.html', labels=labels)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5001)
+```
+
+<br><br>
+
+### 3-3-2. templates/index.html
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Upload</title>
+</head>
+<body>
+    <h1>Upload an Image</h1>
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <input type="submit" value="Upload">
+    </form>
+    {% if labels %}
+        <h2>Labels:</h2>
+        <ul>
+            {% for label in labels %}
+                <li>{{ label.Name }}: {{ label.Confidence }}%</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+</body>
+</html>
+```
+
+<br><br>
+
+### 3-3-3. index2.html
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Upload</title>
+</head>
+<body>
+    <h1>Upload an Image</h1>
+    <form action="/upload2" method="post" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <input type="submit" value="Upload">
+    </form>
+    {% if labels %}
+        <h2>TextDetections:</h2>
+        <ul>
+            {% for label in labels %}
+                <li>{{ label.DetectedText }}: {{ label.Confidence }}%</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+</body>
+</html>
+```
+
+<br><br><br>
+
+## 3-4. 웹 애플리케이션 실행
+
+```bash
+python app.py runserver
+```
 
 <br><br><br><br>
 
 # 4. CNN을 활용한 이미지 채점하기
 
+## 4-1. CNN 이미지 채점 프로젝트 파일 구조
 
+```lua
+image-grading/
+│
+├── app.py  # Flask 웹 애플리케이션의 진입점
+├── data/
+│   ├── train   # 훈련 이미지 데이터
+│   └── valdi   # 검증 이미지 데이터
+├── static/
+│   ├── graded      # 채점자가 업로드한 파일을 저장하는 디렉토리
+│   └── uploads/  # 응시자가 업로드한 파일을 저장하는 디렉터리
+├── templates/
+│   ├── index.html  # 메인 페이지 템플릿
+│   ├── pointing_page.html  # 채점 페이지 템플릿
+│   ├── result_page.html  # 채점 결과 출력 템플릿
+│   └── send_image.html  # 응시자 이미지 업로드 페이지 템플릿
+├── model.py            # CNN 모델 정의
+├── image_grading_model.h5  # CNN 사전 훈련 데이터
+├── model.py            # CNN 모델 정의
+└── train_model.py      # 사전 훈련 모델 정의
+```
+
+<br><br><br>
+
+## 4-2. 이미지 채점 모델 작성 및 훈련
+
+### 4-2-1. 이미지 채점 관련 패키지 설치
+
+```bash
+pip install Flask tensorflow numpy pillow
+```
+
+<br><br>
+
+### 4-2-2. train_model.py
+
+```python
+from model import build_model, train_model
+
+# 학습할 데이터 디렉토리 경로 설정
+train_data_dir = 'data/train'
+validation_data_dir = 'data/valdi'
+
+# 모델 구축
+model = build_model()
+
+# 모델 학습
+train_model(model, train_data_dir, validation_data_dir)
+
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# 하이퍼파라미터 설정
+input_shape = (64, 64, 3)
+num_classes = 3  # V, X, /
+
+# 모델 설계
+model = Sequential([
+    Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=input_shape),
+    MaxPooling2D(pool_size=(2, 2)),
+    Conv2D(64, (3, 3), activation='relu'),
+    MaxPooling2D(pool_size=(2, 2)),
+    Flatten(),
+    Dense(128, activation='relu'),
+    Dropout(0.5),
+    Dense(num_classes, activation='softmax')
+])
+
+# 모델 컴파일
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+# 데이터 전처리 및 증강
+train_datagen = ImageDataGenerator(rescale=1./255)
+train_generator = train_datagen.flow_from_directory(
+    'data/train',
+    target_size=(64, 64),
+    batch_size=32,
+    class_mode='categorical'
+)
+
+# 모델 학습
+model.fit(train_generator, epochs=1000)
+
+# 모델 저장
+model.save('image_grading_model.h5')
+```
+
+<br><br>
+
+### 4-2-3. 훈련 및 검증 이미지 업로드
+
+1. **data/train** 디렉토리 안에 훈련 이미지들을 복사하여 붙여 넣습니다.
+2. **data/valdi** 디렉토리 안에 훈련 검증 이미지들을 복사하여 붙여 넣습니다.
+
+<br><br>
+
+### 4-2-4. 이미지 채점 모델 훈련
+
+```bash
+python train_model.py
+```
+
+<br><br><br>
+
+## 4-3. 웹 애플리케이션 작성
+
+### 4-3-1. app.py
+
+```python
+import base64
+import json
+import os
+
+import numpy as np
+from PIL import Image, ImageDraw
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory
+from werkzeug.utils import secure_filename
+from model import load_model, predict_marks
+
+app = Flask(__name__)
+UPLOAD_FOLDER = 'static/uploads/'
+GRADED_FOLDER = 'static/graded/'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['GRADED_FOLDER'] = GRADED_FOLDER
+
+# 폴더 생성
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(GRADED_FOLDER, exist_ok=True)
+
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+# 모델 로드
+model = load_model()
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@app.route('/send_image', methods=['GET', 'POST'])
+def send_image():
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            return redirect(request.url)
+        file = request.files['file']
+        if file.filename == '':
+            return redirect(request.url)
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
+            return redirect(url_for('pointing_page', filename=filename))
+    return render_template('send_image.html')
+
+
+@app.route('/pointing_page/<filename>', methods=['GET', 'POST'])
+def pointing_page(filename):
+    if request.method == 'POST':
+        student_name = request.form.get('student_name')
+        img_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+        # 모델을 사용하여 이미지 채점 및 결과 저장
+        score, grading_info, graded_filename = predict_marks(model, img_path)
+
+        # 채점 결과 저장
+        result = {
+            "student_name": student_name,
+            "uploaded_image": filename,
+            "graded_image": graded_filename,
+            "score": score,
+            "grading_info": grading_info
+        }
+        result_path = os.path.join(app.config['GRADED_FOLDER'], f'{filename.split(".")[0]}.json')
+        with open(result_path, 'w') as json_file:
+            json.dump(result, json_file)
+
+        return redirect(url_for('result_page', result_json=f'{filename.split(".")[0]}.json'))
+
+    return render_template('pointing_page.html', filename=filename)
+
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+@app.route('/graded/<filename>')
+def graded_file(filename):
+    return send_from_directory(app.config['GRADED_FOLDER'], filename)
+
+
+@app.route('/result/<result_json>')
+def result_page(result_json):
+    result_path = os.path.join(app.config['GRADED_FOLDER'], result_json)
+    with open(result_path, 'r') as json_file:
+        result = json.load(json_file)
+    return render_template('result_page.html', result=result)
+
+
+def predict_grades(model, image_path):
+    # 이미지 로드 및 전처리
+    img = Image.open(image_path)
+    img = img.resize((64, 64))  # 모델 입력 크기에 맞게 조정
+    img_array = np.array(img) / 255.0  # 정규화
+    img_array = np.expand_dims(img_array, axis=0)  # 배치 차원 추가
+
+    # 모델 예측
+    predictions = model.predict(img_array)
+    predicted_class = np.argmax(predictions, axis=1)[0]
+
+    # 예시 점수 및 등급 할당
+    score = 100  # 기본 점수
+    grading_info = {
+        "color": ("X", "red"),
+        "icon": ("V", "blue"),
+        "typography": ("/", "yellow"),
+        "layout": ("X", "green")
+    }
+
+    # 모델 예측에 따라 점수 조정
+    if predicted_class == 0:  # 예: 'X'일 경우
+        score -= 10
+    elif predicted_class == 1:  # 예: 'V'일 경우
+        score -= 5
+    elif predicted_class == 2:  # 예: '/'일 경우
+        score -= 1
+
+    # 이미지에 주석 추가
+    img = Image.open(image_path)
+    draw = ImageDraw.Draw(img)
+
+    # 예시로 X, V, /를 랜덤 위치에 추가 (실제 구현 시 적절한 위치 및 주석 추가)
+    draw.text((10, 10), "X", fill="red")
+    draw.text((50, 50), "V", fill="blue")
+    draw.text((90, 90), "/", fill="yellow")
+
+    # 채점된 이미지 저장
+    graded_filename = f'{os.path.splitext(os.path.basename(image_path))[0]}_graded.png'
+    graded_path = os.path.join(app.config['GRADED_FOLDER'], graded_filename)
+    img.save(graded_path)
+
+    return score, grading_info, graded_filename
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+```
+
+<br><br>
+
+### 4-3-2. model.py
+
+```python
+import os
+
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Conv2D, MaxPooling2D, Flatten
+from tensorflow.keras.preprocessing import image
+import numpy as np
+from PIL import Image, ImageDraw
+
+
+def build_model(input_shape=(64, 64, 3), num_classes=3):
+    model = Sequential([
+        Conv2D(32, (3, 3), activation='relu', input_shape=input_shape),
+        MaxPooling2D(pool_size=(2, 2)),
+        Conv2D(64, (3, 3), activation='relu'),
+        MaxPooling2D(pool_size=(2, 2)),
+        Flatten(),
+        Dense(128, activation='relu'),
+        Dense(num_classes, activation='softmax')
+    ])
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+
+def train_model(model, train_data_dir, validation_data_dir):
+    train_datagen = image.ImageDataGenerator(rescale=1. / 255, shear_range=0.2, zoom_range=0.2, horizontal_flip=True)
+    test_datagen = image.ImageDataGenerator(rescale=1. / 255)
+
+    training_set = train_datagen.flow_from_directory(train_data_dir, target_size=(64, 64), batch_size=32,
+                                                     class_mode='categorical')
+    validation_set = test_datagen.flow_from_directory(validation_data_dir, target_size=(64, 64), batch_size=32,
+                                                      class_mode='categorical')
+
+    model.fit(training_set, epochs=10, validation_data=validation_set)
+    model.save('image_grading_model.h5')
+
+
+def load_model():
+    return tf.keras.models.load_model('image_grading_model.h5')
+
+
+def predict_marks(model, image_path):
+    img = image.load_img(image_path, target_size=(64, 64))
+    img_array = image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0) / 255.0
+
+    predictions = model.predict(img_array)
+    class_map = {0: 'V', 1: 'X', 2: '/'}
+    grading_info = {}
+
+    img = Image.open(image_path)
+    draw = ImageDraw.Draw(img)
+    score = 100
+
+    for i, pred in enumerate(predictions[0]):
+        label = class_map[i]
+        count = int(pred * 10)  # 단순 예시로 각 레이블의 빈도 추정
+        color_map = {"V": "blue", "X": "red", "/": "yellow"}
+        grading_info[label] = (count, color_map[label])
+
+        if label == 'V':
+            score -= 10 * count
+        elif label == 'X':
+            score -= 5 * count
+        elif label == '/':
+            score -= 1 * count
+
+        for _ in range(count):
+            draw.text((10 + i * 30, 10), label, fill=color_map[label])
+
+    graded_filename = f'graded_{os.path.basename(image_path)}'
+    graded_path = os.path.join('static/graded', graded_filename)
+    img.save(graded_path)
+
+    return score, grading_info, graded_filename
+```
+
+<br><br>
+
+### 4-3-3. templates/index.html
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Grading System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container text-center mt-5">
+        <h1 class="mb-4">Welcome to the Image Grading System</h1>
+        <a href="{{ url_for('send_image') }}" class="btn btn-primary">Upload an Image for Grading</a>
+    </div>
+</body>
+</html>
+```
+
+<br><br>
+
+### 4-3-4. templates/pointing_page.html
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pointing & Grading</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        #canvas-container {
+            position: relative;
+            display: inline-block;
+        }
+        canvas {
+            border: 1px solid #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">Grade the Uploaded Image</h1>
+        <p>Grading the image: <strong>{{ filename }}</strong></p>
+
+        <div id="canvas-container">
+            <!-- 이미지 표시 -->
+            <img id="image" src="{{ url_for('uploaded_file', filename=filename) }}" class="img-fluid" style="display: none;" alt="Image to Grade">
+            <canvas id="imageCanvas"></canvas>
+        </div>
+
+        <form id="gradingForm" method="post" action="/pointing_page/{{ filename }}">
+            <div class="mb-3">
+                <label for="student_name" class="form-label">Student Name:</label>
+                <input type="text" name="student_name" id="student_name" class="form-control" required>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Select Brush Color:</label>
+                <div>
+                    <input type="radio" id="annotationX" name="annotation" value="X" checked>
+                    <label for="annotationX">Red</label>
+                </div>
+                <div>
+                    <input type="radio" id="annotationV" name="annotation" value="V">
+                    <label for="annotationV">Blue</label>
+                </div>
+                <div>
+                    <input type="radio" id="annotationSlash" name="annotation" value="/">
+                    <label for="annotationSlash">Green</label>
+                </div>
+            </div>
+
+            <p>Once you have annotated the image, click "Submit" to calculate the score.</p>
+            <button type="submit" class="btn btn-success">Submit</button>
+        </form>
+        <br>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary">Go to Home</a>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('imageCanvas');
+        const ctx = canvas.getContext('2d');
+        const imageElement = document.getElementById('image');
+
+        imageElement.onload = () => {
+            canvas.width = imageElement.width;
+            canvas.height = imageElement.height;
+            ctx.drawImage(imageElement, 0, 0);
+        };
+
+        let drawing = false;
+        let lastX = 0;
+        let lastY = 0;
+
+        // Set the default line width
+        ctx.lineWidth = 3;
+
+        document.querySelectorAll('input[name="annotation"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                ctx.strokeStyle = getAnnotationColor(e.target.value);
+            });
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            drawing = true;
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        });
+
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', () => drawing = false);
+        canvas.addEventListener('mouseout', () => drawing = false);
+
+        function draw(e) {
+            if (!drawing) return;
+
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(e.offsetX, e.offsetY);
+            ctx.stroke();
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        }
+
+        function getAnnotationColor(annotation) {
+            switch (annotation) {
+                case 'X': return '#ED1D25'; // Red
+                case 'V': return '#0171C0'; // Blue
+                case '/': return '#62CC80'; // Green
+                default: return 'black';
+            }
+        }
+
+        document.getElementById('gradingForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const dataURL = canvas.toDataURL('image/png');
+
+            const formData = new FormData();
+            formData.append('student_name', document.getElementById('student_name').value);
+            formData.append('image', dataURL);
+
+            fetch('/pointing_page/{{ filename }}', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data);
+                window.location.href = data.redirect_url;
+            });
+        });
+    </script>
+</body>
+</html>
+```
+
+<br><br>
+
+### 4-3-5. templates/result_page.html
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grading Result</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">Grading Result for {{ result.student_name }}</h1>
+        <div class="mb-4">
+            <h2>Score: <span class="badge bg-primary">{{ result.score }}</span></h2>
+        </div>
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <h4>Uploaded Image:</h4>
+                <img src="{{ url_for('static', filename='uploads/' + result.uploaded_image) }}" class="img-fluid" alt="Uploaded Image">
+            </div>
+            <div class="col-md-6">
+                <h4>Graded Image:</h4>
+                <img src="{{ url_for('static', filename='graded/' + result.graded_image) }}" class="img-fluid" alt="Graded Image">
+            </div>
+        </div>
+        <div class="mb-4">
+            <h4>Grading Details:</h4>
+            <ul class="list-group">
+                {% for key, value in result.grading_info.items() %}
+                <li class="list-group-item">{{ key }}: {{ value[0] }} (Color: {{ value[1] }})</li>
+                {% endfor %}
+            </ul>
+        </div>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary">Go to Home</a>
+    </div>
+</body>
+</html>
+```
+
+<br><br>
+
+### 4-3-6. templates/send_image.html
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Image</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">Upload Image for Grading</h1>
+        <form method="post" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="file" class="form-label">Select an image to upload:</label>
+                <input type="file" name="file" id="file" class="form-control" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Upload</button>
+        </form>
+        <br>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary">Go to Home</a>
+    </div>
+</body>
+</html>
+```
+
+<br><br><br>
+
+## 4-4. 웹 애플리케이션 실행
+
+```bash
+python app.py runserver
+```
 
 <br><br><br><br>
 
@@ -464,7 +1277,7 @@ uploads : 판별할 이미지가 업로드되는 디렉토리
 
 먼저, 프로젝트의 파일 구조를 정의합니다.
 
-```csharp
+```lua
 face_generation_app/
 │
 ├── app.py  # Flask 웹 애플리케이션의 진입점
@@ -636,7 +1449,7 @@ def generate_image(input_image_path):
 
 ## 5-4. requirements.txt
 
-```bsah
+```bash
 pip install Flask tensorflow numpy pillow
 ```
 
