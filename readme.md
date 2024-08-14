@@ -428,17 +428,15 @@ if __name__ == '__main__':
 
 <br><br>
 
-### 2-3-5. 사용자 디렉토리 만들기
+### 2-3-5. 모델 훈련
 
-uploads : 판별할 이미지가 업로드되는 디렉토리
-
-<br><br><br>
-
-## 2-4. CNN 모델 훈련
+```bash
+(.venv) python model.py
+```
 
 <br><br><br>
 
-## 2-5. 애플리케이션 실행
+## 2-4. 애플리케이션 실행
 
 ```bash
 (.venv) python app.py runserver
